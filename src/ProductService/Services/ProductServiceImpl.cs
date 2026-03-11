@@ -39,9 +39,6 @@ public class ProductServiceImpl : IProductService
             throw new InvalidOperationException($"User with ID {product.CreatedByUserId} does not exist");
         }
 
-        product.Id = Guid.NewGuid();
-        product.CreatedAt = DateTime.UtcNow;
-
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
 
