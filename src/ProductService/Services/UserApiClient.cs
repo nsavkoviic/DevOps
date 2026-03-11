@@ -24,8 +24,18 @@ public class UserApiClient : IUserApiClient
                 return true;
             }
 
-            _logger.LogWarning("User {UserId} not found in UserService. Status: {StatusCode}", userId, response.StatusCode);
-            return false;
+            // Only treat 404/410 as "user not found"
+            if (response.StatusCode is System.Net.HttpStatusCode.NotFound
+                or System.Net.HttpStatusCode.Gone)
+            {
+                _logger.LogWarning("User {UserId} not found in UserService. Status: {StatusCode}", userId, response.StatusCode);
+                return false;
+            }
+
+            // For all other non-success codes (5xx, 401, 403, etc.), throw to signal upstream failure
+            _logger.LogError("Unexpected response from UserService for user {UserId}. Status: {StatusCode}", userId, response.StatusCode);
+            response.EnsureSuccessStatusCode();
+            return false; // unreachable, but satisfies compiler
         }
         catch (HttpRequestException ex)
         {

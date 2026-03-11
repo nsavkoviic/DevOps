@@ -55,6 +55,12 @@ public class ProductsController : ControllerBase
             _logger.LogWarning(ex, "Failed to create product: {Message}", ex.Message);
             return BadRequest(ApiResponse<Product>.Fail(ex.Message));
         }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "UserService is unavailable while creating product");
+            return StatusCode(StatusCodes.Status502BadGateway,
+                ApiResponse<Product>.Fail("UserService is currently unavailable. Please try again later."));
+        }
     }
 
     [HttpPut("{id:guid}")]
