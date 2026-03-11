@@ -27,10 +27,20 @@ public class UserApiClient : IUserApiClient
             _logger.LogWarning("User {UserId} not found in UserService. Status: {StatusCode}", userId, response.StatusCode);
             return false;
         }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HTTP error communicating with UserService for user {UserId}", userId);
+            throw;
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "Request to UserService timed out for user {UserId}", userId);
+            throw;
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error communicating with UserService for user {UserId}", userId);
-            return false;
+            _logger.LogError(ex, "Unexpected error communicating with UserService for user {UserId}", userId);
+            throw;
         }
     }
 }
