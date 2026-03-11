@@ -29,8 +29,6 @@ public class UserServiceImpl : IUserService
 
     public async Task<User> CreateAsync(User user)
     {
-        user.Id = Guid.NewGuid();
-        user.CreatedAt = DateTime.UtcNow;
 
         _context.Users.Add(user);
         await _context.SaveChangesAsync();
