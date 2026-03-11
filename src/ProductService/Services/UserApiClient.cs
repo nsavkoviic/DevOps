@@ -16,7 +16,7 @@ public class UserApiClient : IUserApiClient
         try
         {
             _logger.LogInformation("Checking if user {UserId} exists via REST call to UserService", userId);
-            var response = await _httpClient.GetAsync($"/api/users/{userId}");
+            using var response = await _httpClient.GetAsync($"/api/users/{userId}");
 
             if (response.IsSuccessStatusCode)
             {
