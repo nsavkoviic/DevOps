@@ -19,21 +19,14 @@ public class NotificationWorker : BackgroundService
         _config = config;
     }
 
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("NotificationWorker starting — connecting to RabbitMQ...");
 
-        stoppingToken.Register(() =>
-        {
-            _logger.LogInformation("NotificationWorker stopping — disposing RabbitMQ resources");
-            _channel?.Dispose();
-            _connection?.Dispose();
-        });
+        await ConnectWithRetryAsync(stoppingToken);
 
-        // Retry connection with delay to handle startup ordering
-        _ = ConnectWithRetryAsync(stoppingToken);
-
-        return Task.CompletedTask;
+        // Keep worker alive until shutdown is requested
+        await Task.Delay(Timeout.Infinite, stoppingToken).ContinueWith(_ => { });
     }
 
     private async Task ConnectWithRetryAsync(CancellationToken stoppingToken)
@@ -54,7 +47,9 @@ public class NotificationWorker : BackgroundService
                 {
                     HostName = _config["RabbitMQ:Host"] ?? "localhost",
                     UserName = _config["RabbitMQ:Username"] ?? "devops",
-                    Password = _config["RabbitMQ:Password"] ?? "devops123"
+                    Password = _config["RabbitMQ:Password"] ?? "devops123",
+                    AutomaticRecoveryEnabled = true,
+                    TopologyRecoveryEnabled = true
                 };
 
                 _connection = factory.CreateConnection();
@@ -81,20 +76,26 @@ public class NotificationWorker : BackgroundService
                         if (message is not null)
                         {
                             _logger.LogInformation(
-                                "📧 Notification sent for OrderId: {OrderId}, User: {UserId}, Product: {ProductName}, Amount: {Amount}",
+                                "Notification sent for OrderId: {OrderId}, User: {UserId}, Product: {ProductName}, Amount: {Amount}",
                                 message.OrderId, message.UserId, message.ProductName, message.TotalAmount);
+
+                            _channel.BasicAck(ea.DeliveryTag, multiple: false);
                         }
                         else
                         {
-                            _logger.LogWarning("Received null message from order-created queue");
+                            _logger.LogWarning("Received null message from order-created queue — message will not be requeued");
+                            _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
                         }
-
-                        _channel.BasicAck(ea.DeliveryTag, multiple: false);
+                    }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogError(ex, "Deserialization error processing message from order-created queue — message will not be requeued");
+                        _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error processing message from order-created queue");
-                        _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: true);
+                        _logger.LogError(ex, "Error processing message from order-created queue — message will not be requeued");
+                        _channel.BasicNack(ea.DeliveryTag, multiple: false, requeue: false);
                     }
                 };
 
@@ -108,6 +109,12 @@ public class NotificationWorker : BackgroundService
             }
             catch (Exception ex)
             {
+                // Dispose partially-created resources before retrying
+                _channel?.Dispose();
+                _channel = null;
+                _connection?.Dispose();
+                _connection = null;
+
                 _logger.LogWarning(ex,
                     "Failed to connect to RabbitMQ (attempt {Attempt}/{MaxRetries}). Retrying in {Delay}s...",
                     attempt, maxRetries, retryDelay.TotalSeconds);
