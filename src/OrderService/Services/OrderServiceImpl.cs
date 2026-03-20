@@ -115,7 +115,7 @@ public class OrderServiceImpl : IOrderService
         var client = new UserGrpc.UserGrpcClient(channel);
 
         var reply = await client.GetUserAsync(new GetUserRequest { Id = userId.ToString() });
-        _logger.LogInformation("gRPC response received — User: {UserName}, Email: {Email}", reply.Name, reply.Email);
+        _logger.LogInformation("gRPC response received — User: {UserName}", reply.Name);
 
         return reply.Name;
     }
