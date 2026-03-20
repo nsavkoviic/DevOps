@@ -46,25 +46,38 @@ public class OrderServiceImpl : IOrderService
         var userName = await GetUserNameViaGrpcAsync(order.UserId);
         _logger.LogInformation("gRPC validated user: {UserName} for order creation", userName);
 
-        _context.Orders.Add(order);
-        await _context.SaveChangesAsync();
-
-        _logger.LogInformation("Created order with ID: {OrderId} for User: {UserId}", order.Id, order.UserId);
-
-        // Step 3: Submit to Rx.NET reactive processing pipeline
-        _orderProcessingService.SubmitOrder(order);
-
-        // Step 4: Publish OrderCreated event to RabbitMQ
-        var message = new OrderCreatedMessage
+        // Step 2: Save order and publish event within a transaction
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
         {
-            OrderId = order.Id,
-            UserId = order.UserId,
-            ProductName = order.ProductName,
-            Quantity = order.Quantity,
-            TotalAmount = order.TotalAmount,
-            CreatedAt = order.CreatedAt
-        };
-        _messagePublisher.PublishOrderCreated(message);
+            _context.Orders.Add(order);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Created order with ID: {OrderId} for User: {UserId}", order.Id, order.UserId);
+
+            // Step 3: Publish OrderCreated event to RabbitMQ
+            var message = new OrderCreatedMessage
+            {
+                OrderId = order.Id,
+                UserId = order.UserId,
+                ProductName = order.ProductName,
+                Quantity = order.Quantity,
+                TotalAmount = order.TotalAmount,
+                CreatedAt = order.CreatedAt
+            };
+            _messagePublisher.PublishOrderCreated(message);
+
+            await transaction.CommitAsync();
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            _logger.LogError(ex, "Failed to create order for User: {UserId}. Transaction rolled back.", order.UserId);
+            throw;
+        }
+
+        // Step 4: Submit to Rx.NET reactive processing pipeline after successful commit
+        _orderProcessingService.SubmitOrder(order);
 
         return order;
     }

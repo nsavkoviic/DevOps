@@ -6,7 +6,7 @@ namespace OrderService.Services;
 
 public class OrderProcessingService : IOrderProcessingService
 {
-    private readonly Subject<Order> _orderSubject = new();
+    private readonly ISubject<Order> _orderSubject = new Subject<Order>().Synchronize();
     private readonly IDisposable _subscription;
     private readonly ILogger<OrderProcessingService> _logger;
     private bool _disposed;
