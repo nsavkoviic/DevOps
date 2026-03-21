@@ -55,19 +55,19 @@ public class OrdersController : ControllerBase
         {
             _logger.LogWarning(ex, "gRPC call to UserService failed: {Status}", ex.Status);
 
-            if (ex.StatusCode == StatusCode.NotFound)
+            if (ex.StatusCode == Grpc.Core.StatusCode.NotFound)
             {
                 return BadRequest(ApiResponse<Order>.Fail($"User not found: {ex.Status.Detail}"));
             }
 
-            return StatusCode(StatusCodes.Status502BadGateway,
+            return StatusCode(502,
                 ApiResponse<Order>.Fail("UserService is currently unavailable via gRPC. Please try again later."));
         }
         catch (Exception ex) when (ex is RabbitMQ.Client.Exceptions.BrokerUnreachableException
                                     or RabbitMQ.Client.Exceptions.ConnectFailureException)
         {
             _logger.LogError(ex, "RabbitMQ is unavailable while creating order");
-            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+            return StatusCode(503,
                 ApiResponse<Order>.Fail("Message queue is currently unavailable. Please try again later."));
         }
     }

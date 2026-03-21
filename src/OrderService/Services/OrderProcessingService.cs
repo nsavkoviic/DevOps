@@ -6,9 +6,10 @@ namespace OrderService.Services;
 
 public class OrderProcessingService : IOrderProcessingService
 {
-    private readonly ISubject<Order> _orderSubject = new Subject<Order>().Synchronize();
+    private readonly Subject<Order> _orderSubject = new();
     private readonly IDisposable _subscription;
     private readonly ILogger<OrderProcessingService> _logger;
+    private readonly object _submitLock = new();
     private bool _disposed;
 
     public OrderProcessingService(ILogger<OrderProcessingService> logger)
@@ -31,7 +32,10 @@ public class OrderProcessingService : IOrderProcessingService
     public void SubmitOrder(Order order)
     {
         _logger.LogInformation("Order {OrderId} submitted to Rx.NET stream", order.Id);
-        _orderSubject.OnNext(order);
+        lock (_submitLock)
+        {
+            _orderSubject.OnNext(order);
+        }
     }
 
     private void ProcessOrder(Order order)
