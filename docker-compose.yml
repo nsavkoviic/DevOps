@@ -11,6 +11,7 @@ volumes:
   grafana-data:
   seq-data:
 
+
 services:
   # ============================================================
   # Infrastructure Services
@@ -29,7 +30,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U devops"]
+      test: [ "CMD-SHELL", "pg_isready -U devops" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,7 +49,7 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -105,5 +106,117 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
       - prometheus
+    networks:
+      - microservices-net
+
+  # ============================================================
+  # Microservices
+  # ============================================================
+
+  user-service:
+    build:
+      context: ./src
+      dockerfile: UserService/Dockerfile
+    container_name: devops-user-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=users_db;Username=devops;Password=devops123"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5001:80"
+      - "5011:5011"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  product-service:
+    build:
+      context: ./src
+      dockerfile: ProductService/Dockerfile
+    container_name: devops-product-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=products_db;Username=devops;Password=devops123"
+      Services__UserService: "http://user-service:80"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5002:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  order-service:
+    build:
+      context: ./src
+      dockerfile: OrderService/Dockerfile
+    container_name: devops-order-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=orders_db;Username=devops;Password=devops123"
+      Services__UserServiceGrpc: "http://user-service:5011"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Username: "devops"
+      RabbitMQ__Password: "devops123"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+      DOTNET_SYSTEM_NET_HTTP_SOCKETSHTTPHANDLER_HTTP2UNENCRYPTEDSUPPORT: "1"
+    ports:
+      - "5003:80"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+    networks:
+      - microservices-net
+
+  notification-service:
+    build:
+      context: ./src
+      dockerfile: NotificationService/Dockerfile
+    container_name: devops-notification-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Username: "devops"
+      RabbitMQ__Password: "devops123"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5004:80"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  api-gateway:
+    build:
+      context: ./src
+      dockerfile: ApiGateway/Dockerfile
+    container_name: devops-api-gateway
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5000:80"
+    depends_on:
+      user-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+      order-service:
+        condition: service_started
     networks:
       - microservices-net
