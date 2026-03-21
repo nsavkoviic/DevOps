@@ -1,0 +1,91 @@
+## .NET
+*.swp
+*.*~
+project.lock.json
+.DS_Store
+*.pyc
+nupkg/
+*.user
+*.suo
+*.userprefs
+**/Properties/launchSettings.json
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio
+.vs/
+*.sln.docstates
+*.rsuser
+*.cachefile
+*.VisualState.xml
+
+# Rider
+.idea/
+*.sln.iml
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# NuGet
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+*.nupkg
+**/packages/**
+!**/packages/**/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+
+# Test Results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+
+# NCrunch
+_NCrunch_*
+.*crunch*.local.xml
+nCrunchTemp_*
+
+# Build
+*.pidb
+*.svclog
+*.scc
+*.dbmdl
+*.dbproj.schemaview
+*.jfm
+*.pfx
+*.publishsettings
+
+# Publish
+*.Publish.xml
+
+# Code Coverage
+coverage*.json
+coverage*.xml
+coverage*.info
+
+# Docker
+docker-compose.override.yml
+
+# Misc
+*.tmp
+*.bak
+*.log

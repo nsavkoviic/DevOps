@@ -1,0 +1,124 @@
+# ─────────────────────────────────────────────────────────────────
+# CD Pipeline — Build & Push Docker Images to GHCR
+# Triggers on push to main branch (after PR merge).
+# ─────────────────────────────────────────────────────────────────
+
+name: CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/devops
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Build, Tag & Push Docker Images
+  # ────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push — ${{ matrix.service.name }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service:
+          - name: user-service
+            dockerfile: src/UserService/Dockerfile
+          - name: product-service
+            dockerfile: src/ProductService/Dockerfile
+          - name: order-service
+            dockerfile: src/OrderService/Dockerfile
+          - name: notification-service
+            dockerfile: src/NotificationService/Dockerfile
+          - name: api-gateway
+            dockerfile: src/ApiGateway/Dockerfile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ────────────────────────────────────────────────────────────────
+  # Deploy via SSH + Post-deploy health checks
+  # ────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ~/devops-project
+            docker compose pull
+            docker compose up -d
+
+      - name: Wait for services to start
+        run: sleep 30
+
+      - name: Post-deploy health check
+        run: |
+          DEPLOY_HOST="${{ secrets.DEPLOY_HOST }}"
+          SERVICES=("5000" "5001" "5002" "5003" "5004")
+          NAMES=("api-gateway" "user-service" "product-service" "order-service" "notification-service")
+          FAILED=0
+
+          for i in "${!SERVICES[@]}"; do
+            PORT="${SERVICES[$i]}"
+            NAME="${NAMES[$i]}"
+            echo "Checking ${NAME} on port ${PORT}..."
+
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DEPLOY_HOST}:${PORT}/health" || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "  ✅ ${NAME} — healthy (HTTP ${HTTP_CODE})"
+            else
+              echo "  ❌ ${NAME} — unhealthy (HTTP ${HTTP_CODE})"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" = "1" ]; then
+            echo ""
+            echo "❌ Post-deploy health check failed!"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All services are healthy after deployment."

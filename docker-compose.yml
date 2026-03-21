@@ -1,0 +1,252 @@
+version: '3.8'
+
+networks:
+  microservices-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  prometheus-data:
+  grafana-data:
+  seq-data:
+
+
+services:
+  # ============================================================
+  # Infrastructure Services
+  # ============================================================
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: devops-postgres
+    environment:
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops123
+      POSTGRES_DB: devopsdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U devops" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: devops-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: devops
+      RABBITMQ_DEFAULT_PASS: devops123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices-net
+
+  seq:
+    image: datalust/seq:latest
+    container_name: devops-seq
+    environment:
+      ACCEPT_EULA: "Y"
+    ports:
+      - "5341:5341"
+      - "8081:80"
+    volumes:
+      - seq-data:/data
+    networks:
+      - microservices-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: devops-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    networks:
+      - microservices-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: devops-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - microservices-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: devops-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - microservices-net
+
+  # ============================================================
+  # Microservices
+  # ============================================================
+
+  user-service:
+    build:
+      context: ./src
+      dockerfile: UserService/Dockerfile
+    container_name: devops-user-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=users_db;Username=devops;Password=devops123"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5001:80"
+      - "5011:5011"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:80/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  product-service:
+    build:
+      context: ./src
+      dockerfile: ProductService/Dockerfile
+    container_name: devops-product-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=products_db;Username=devops;Password=devops123"
+      Services__UserService: "http://user-service:80"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5002:80"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:80/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  order-service:
+    build:
+      context: ./src
+      dockerfile: OrderService/Dockerfile
+    container_name: devops-order-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Database=orders_db;Username=devops;Password=devops123"
+      Services__UserServiceGrpc: "http://user-service:5011"
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Username: "devops"
+      RabbitMQ__Password: "devops123"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+      DOTNET_SYSTEM_NET_HTTP_SOCKETSHTTPHANDLER_HTTP2UNENCRYPTEDSUPPORT: "1"
+    ports:
+      - "5003:80"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:80/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  notification-service:
+    build:
+      context: ./src
+      dockerfile: NotificationService/Dockerfile
+    container_name: devops-notification-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      RabbitMQ__Host: "rabbitmq"
+      RabbitMQ__Username: "devops"
+      RabbitMQ__Password: "devops123"
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5004:80"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:80/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices-net
+
+  api-gateway:
+    build:
+      context: ./src
+      dockerfile: ApiGateway/Dockerfile
+    container_name: devops-api-gateway
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      Seq__ServerUrl: "http://seq:5341"
+      Otel__Endpoint: "http://jaeger:4317"
+    ports:
+      - "5000:80"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:80/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    depends_on:
+      user-service:
+        condition: service_healthy
+      product-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+    networks:
+      - microservices-net
