@@ -73,7 +73,6 @@ jobs:
 
       - name: Build with warnings as errors
         run: dotnet build DevOpsProject.sln --configuration Release --no-restore /p:TreatWarningsAsErrors=true
-        continue-on-error: true
 
   # ────────────────────────────────────────────────────────────────
   # Docker Build — verify images build successfully
