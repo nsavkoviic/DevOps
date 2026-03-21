@@ -69,7 +69,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   # ────────────────────────────────────────────────────────────────
-  # Deploy (placeholder — expand for your environment)
+  # Deploy via SSH + Post-deploy health checks
   # ────────────────────────────────────────────────────────────────
   deploy:
     name: Deploy
@@ -78,19 +78,47 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            cd ~/devops-project
+            docker compose pull
+            docker compose up -d
 
-      - name: Deploy notification
+      - name: Wait for services to start
+        run: sleep 30
+
+      - name: Post-deploy health check
         run: |
-          echo "✅ All images pushed to GHCR successfully."
-          echo "📦 Images:"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/user-service:latest"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/product-service:latest"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/order-service:latest"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/notification-service:latest"
-          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api-gateway:latest"
+          DEPLOY_HOST="${{ secrets.DEPLOY_HOST }}"
+          SERVICES=("5000" "5001" "5002" "5003" "5004")
+          NAMES=("api-gateway" "user-service" "product-service" "order-service" "notification-service")
+          FAILED=0
+
+          for i in "${!SERVICES[@]}"; do
+            PORT="${SERVICES[$i]}"
+            NAME="${NAMES[$i]}"
+            echo "Checking ${NAME} on port ${PORT}..."
+
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://${DEPLOY_HOST}:${PORT}/health" || echo "000")
+
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "  ✅ ${NAME} — healthy (HTTP ${HTTP_CODE})"
+            else
+              echo "  ❌ ${NAME} — unhealthy (HTTP ${HTTP_CODE})"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" = "1" ]; then
+            echo ""
+            echo "❌ Post-deploy health check failed!"
+            exit 1
+          fi
+
           echo ""
-          echo "🚀 Ready for deployment to target environment."
-          echo "   To deploy manually:"
-          echo "   docker compose pull && docker compose up -d"
+          echo "✅ All services are healthy after deployment."
