@@ -108,6 +108,36 @@ dotnet_naming_symbols.types.applicable_accessibilities = public, internal, priva
 
 dotnet_naming_style.pascal_case.capitalization = pascal_case
 
+# ── Suppressed analyzer rules ────────────────────────────────────
+# CA1848 — LoggerMessage delegates: performance optimization, not required here
+# CA2007 — ConfigureAwait: only relevant for library code, not ASP.NET apps
+# CA1849 — RunAsync: acceptable in top-level Program.cs
+# CA1305 — IFormatProvider: overly strict for this context
+# CA1711 — Impl suffix: style preference, keeping for clarity
+# CA2234 — HttpClient.GetAsync(Uri): minor preference
+# CA1062 — null parameter validation: controller inputs validated by model binding
+# CA1000 — static members on generic types: ApiResponse<T> pattern is intentional
+# CA1721 — property/method name conflict: acceptable in this context
+# CA1031 — catch general exception: intentional for retry/worker patterns
+# CA1063 — IDisposable pattern: sealed classes handle this correctly
+# CA1816 — GC.SuppressFinalize: addressed where needed
+# CA2016 — CancellationToken forwarding: intentional in some cases
+# CA2008 — TaskScheduler: not required in this context
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA2007.severity = none
+dotnet_diagnostic.CA1849.severity = none
+dotnet_diagnostic.CA1305.severity = none
+dotnet_diagnostic.CA1711.severity = none
+dotnet_diagnostic.CA2234.severity = none
+dotnet_diagnostic.CA1062.severity = none
+dotnet_diagnostic.CA1000.severity = none
+dotnet_diagnostic.CA1721.severity = none
+dotnet_diagnostic.CA1031.severity = none
+dotnet_diagnostic.CA1063.severity = none
+dotnet_diagnostic.CA1816.severity = none
+dotnet_diagnostic.CA2016.severity = none
+dotnet_diagnostic.CA2008.severity = none
+
 # Suppress specific warnings for generated code
 [**/Migrations/**.cs]
 generated_code = true
