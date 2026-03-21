@@ -74,9 +74,44 @@ docker compose up --build
 dotnet test DevOpsProject.sln
 ```
 
-## 🔄 CI/CD Workflow
+## 🔄 CI/CD Pipeline
 
-> Detalji CI/CD pipeline-a biće dodati u kasnijim fazama.
+### CI (`.github/workflows/ci.yml`)
+
+Pokreće se na **svaki push** i **PR** ka `main`/`dev`:
+
+| Job | Opis |
+|-----|------|
+| **build-and-test** | Restore → Build (Release) → Unit testovi (3 projekta) → Upload `.trx` rezultata |
+| **code-quality** | .NET Analyzers sa `TreatWarningsAsErrors=true` |
+| **docker-build** | Matrix build svih 5 Docker image-a |
+
+### CD (`.github/workflows/cd.yml`)
+
+Pokreće se na **push na `main`** (nakon merge-a):
+
+| Job | Opis |
+|-----|------|
+| **build-and-push** | Build → Push na GHCR (`ghcr.io`) sa SHA + `latest` tagovima |
+| **deploy** | Placeholder za deployment (spreman za proširenje) |
+
+## 🧰 Tehnologije
+
+| Kategorija | Tehnologija |
+|-----------|-------------|
+| **Runtime** | .NET 8, ASP.NET Core |
+| **Baza podataka** | PostgreSQL 16 (EF Core) |
+| **Message Broker** | RabbitMQ 3.13 |
+| **API Gateway** | YARP (Yet Another Reverse Proxy) |
+| **gRPC** | Grpc.AspNetCore / Grpc.Net.Client |
+| **Reactive** | Rx.NET (System.Reactive) |
+| **Tracing** | OpenTelemetry → Jaeger |
+| **Metrics** | OpenTelemetry → Prometheus → Grafana |
+| **Logging** | Serilog → Seq |
+| **Testiranje** | xUnit, Moq, FluentAssertions, EF Core InMemory |
+| **Kontejnerizacija** | Docker, Docker Compose |
+| **CI/CD** | GitHub Actions |
+| **Registry** | GitHub Container Registry (GHCR) |
 
 ## 📁 Struktura projekta
 
@@ -95,9 +130,18 @@ dotnet test DevOpsProject.sln
 │   └── E2E.Tests/
 ├── monitoring/
 │   ├── prometheus/
+│   │   └── prometheus.yml
 │   └── grafana/
+│       ├── provisioning/
+│       │   ├── datasources/
+│       │   └── dashboards/
+│       └── dashboards/
+│           └── microservices.json
 ├── .github/workflows/
+│   ├── ci.yml
+│   └── cd.yml
 ├── docker-compose.yml
 ├── DevOpsProject.sln
+├── .editorconfig
 └── README.md
 ```
