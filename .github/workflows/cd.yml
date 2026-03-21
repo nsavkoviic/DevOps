@@ -1,0 +1,96 @@
+# ─────────────────────────────────────────────────────────────────
+# CD Pipeline — Build & Push Docker Images to GHCR
+# Triggers on push to main branch (after PR merge).
+# ─────────────────────────────────────────────────────────────────
+
+name: CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/devops
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # Build, Tag & Push Docker Images
+  # ────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push — ${{ matrix.service.name }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      matrix:
+        service:
+          - name: user-service
+            dockerfile: src/UserService/Dockerfile
+          - name: product-service
+            dockerfile: src/ProductService/Dockerfile
+          - name: order-service
+            dockerfile: src/OrderService/Dockerfile
+          - name: notification-service
+            dockerfile: src/NotificationService/Dockerfile
+          - name: api-gateway
+            dockerfile: src/ApiGateway/Dockerfile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.name }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./src
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ────────────────────────────────────────────────────────────────
+  # Deploy (placeholder — expand for your environment)
+  # ────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy notification
+        run: |
+          echo "✅ All images pushed to GHCR successfully."
+          echo "📦 Images:"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/user-service:latest"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/product-service:latest"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/order-service:latest"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/notification-service:latest"
+          echo "  - ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/api-gateway:latest"
+          echo ""
+          echo "🚀 Ready for deployment to target environment."
+          echo "   To deploy manually:"
+          echo "   docker compose pull && docker compose up -d"
